@@ -4,8 +4,8 @@ import { extname, join, normalize } from 'node:path'
 import { COLLECTIONS, type CollectionName } from '@msa/core/storage'
 import { InvalidPageQuery, QuotaExceeded, type DocStore } from './db.ts'
 import { parseListQuery } from './query.ts'
-import { HttpError, isSecureRequest, readBody, send } from './http.ts'
-import type { AuthStore } from './auth.ts'
+import { HttpError, isSecureRequest, readBody, readCookie, send } from './http.ts'
+import { SESSION_COOKIE, type AuthStore } from './auth.ts'
 import type { VaultStore } from './vault.ts'
 import type { AcknowledgmentStore } from './acknowledgments.ts'
 import type { Database } from './database.ts'
@@ -35,8 +35,14 @@ const MIME: Record<string, string> = {
   '.png': 'image/png',
   '.ico': 'image/x-icon',
   '.json': 'application/json',
+  '.txt': 'text/plain; charset=utf-8',
+  '.xml': 'application/xml; charset=utf-8',
   '.woff2': 'font/woff2',
 }
+
+const PRERENDERED = new Set(['/welcome', '/trust', '/security', '/best-practice'])
+
+const SELF_ROBOTS = 'User-agent: *\nDisallow: /\n'
 
 export const createApp = (options: AppOptions) => {
   const { database, config, staticDir } = options
@@ -109,13 +115,26 @@ export const createApp = (options: AppOptions) => {
     return send(res, 204)
   }
 
-  const handleStatic = async (res: ServerResponse, url: URL) => {
+  const prerenderedFile = (req: IncomingMessage, pathname: string) => {
+    if (config.mode !== 'hosted' || readCookie(req, SESSION_COOKIE)) return null
+    const page = pathname === '/' ? '/welcome' : pathname
+    return PRERENDERED.has(page) ? join(staticDir, 'prerendered', `${page.slice(1)}.html`) : null
+  }
+
+  const handleStatic = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
+    if (config.mode === 'self' && url.pathname === '/robots.txt') {
+      res.writeHead(200, { 'Content-Type': MIME['.txt'], 'Cache-Control': 'no-cache' }).end(SELF_ROBOTS)
+      return
+    }
     const requested = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, '')
     let file = join(staticDir, requested)
     if (!file.startsWith(staticDir)) throw new HttpError(403, 'Forbidden')
 
     const info = await stat(file).catch(() => null)
-    if (!info || info.isDirectory()) file = join(staticDir, 'index.html')
+    if (!info || info.isDirectory()) {
+      const prerendered = prerenderedFile(req, url.pathname)
+      file = prerendered && (await stat(prerendered).catch(() => null)) ? prerendered : join(staticDir, 'index.html')
+    }
 
     const content = await readFile(file).catch(() => null)
     if (!content) {
@@ -123,7 +142,15 @@ export const createApp = (options: AppOptions) => {
       return
     }
     const cache = file.includes(`${join(staticDir, 'assets')}`) ? 'public, max-age=31536000, immutable' : 'no-cache'
-    res.writeHead(200, { 'Content-Type': MIME[extname(file)] ?? 'application/octet-stream', 'Cache-Control': cache }).end(content)
+    const hosted = config.mode === 'hosted'
+    res
+      .writeHead(200, {
+        'Content-Type': MIME[extname(file)] ?? 'application/octet-stream',
+        'Cache-Control': cache,
+        ...(hosted && file !== join(staticDir, 'index.html') ? {} : { 'X-Robots-Tag': 'noindex' }),
+        ...(hosted && extname(file) === '.html' ? { Vary: 'Cookie' } : {}),
+      })
+      .end(content)
   }
 
   const health = async (res: ServerResponse) => {
@@ -148,7 +175,7 @@ export const createApp = (options: AppOptions) => {
         res.writeHead(302, { Location: `http://localhost:${port}${url.pathname}${url.search}` }).end()
         return
       }
-      return await handleStatic(res, url)
+      return await handleStatic(req, res, url)
     } catch (error) {
       const status =
         error instanceof HttpError

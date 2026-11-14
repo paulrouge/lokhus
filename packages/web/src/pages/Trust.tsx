@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { PublicShell } from '../components/PublicShell.tsx'
+import { PublicShell, SourceLink } from '../components/PublicShell.tsx'
 
 type Risk = { title: string; risk: string; measures: string[]; gap?: string; you?: string }
 
@@ -144,6 +144,7 @@ export const Trust = () => {
       <footer className="landing-foot">
         The contracts your funds touch (Safe, SODAX) are checked live on the <Link to="/security">Security page</Link>. Lokhus is an
         independent project, not made or endorsed by Safe, SODAX or Robinhood; it uses their public contracts and APIs.
+        <SourceLink />
       </footer>
     </PublicShell>
   )

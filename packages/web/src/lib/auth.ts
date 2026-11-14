@@ -97,8 +97,18 @@ const subscribe = (listener: () => void) => {
 
 export const currentAuth = () => status
 
+const PRERENDER_STATUS: AuthStatus = {
+  mode: 'hosted',
+  needsSetupCode: false,
+  accountExists: false,
+  registrationOpen: true,
+  awaitingPasskey: false,
+  signedIn: false,
+  account: null,
+}
+
 export const useAuth = () => {
-  const current = useSyncExternalStore(subscribe, () => status)
+  const current = useSyncExternalStore(subscribe, () => status, () => PRERENDER_STATUS)
   useEffect(() => {
     if (!status) void refreshAuth()
   }, [])

@@ -35,6 +35,7 @@ npm workspaces, three packages:
 - `packages/core`: framework-agnostic TypeScript. Types, `Storage` interface, plugin interfaces (`WalletPlugin`, `ActionPlugin`, `Registry`), Safe logic (`safe/tx.ts` build/hash/sign/exec encoding, `safe/deploy.ts` via Protocol Kit, `safe/onchain.ts` reads, `safe/activity.ts` log scanning), built-in actions, default chains and seeding. No React, no server assumptions.
 - `packages/server`: plain `node:http` + `node:sqlite` or Postgres (`DATABASE_URL`), run directly as TypeScript via Node type stripping (no build). Generic JSON document store (`docs` table: account, collection, id, data) exposed as `/api/:collection[/:id]`, passkey auth under `/api/auth/*` (`auth.ts` store, `authRoutes.ts`), plus static serving of `packages/web/dist`. `app.ts` builds the request handler so tests can run it.
 - `packages/web`: Vite + React 19 + react-router. Wallet plugins (`wallets/`), HTTP storage adapter, pages, one stylesheet.
+  The public pages (`/welcome`, `/trust`, `/security`, `/best-practice`) are prerendered at build (`packages/web/src/prerender.tsx`, `packages/web/scripts/prerender.ts`) with titles and descriptions from `packages/web/src/seo.ts`; in hosted mode the server serves them to visitors without a session and marks every other page `noindex`, in self mode it keeps everything out of search.
 
 ## Architecture rules
 

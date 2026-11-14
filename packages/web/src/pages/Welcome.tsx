@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import type { ComponentType } from 'react'
 import { useAuth } from '../lib/auth.ts'
-import { PublicShell } from '../components/PublicShell.tsx'
+import { PublicShell, SourceLink } from '../components/PublicShell.tsx'
 import { EarnDemo, SigningDemo, SimulationDemo, SwapDemo } from '../components/LandingDemos.tsx'
 
 const SELF_FIRST = {
@@ -91,6 +91,7 @@ export const Welcome = () => {
       <footer className="landing-foot">
         Safe 1.3.0 and 1.4.1 on Polygon, Sonic, Base and Ethereum. Swaps and lending through SODAX, checked onchain. Lokhus is an independent project, not made or endorsed by SODAX, Safe or Robinhood.{' '}
         <Link to="/trust">How Lokhus can fail, and what we do about it</Link>.
+        <SourceLink />
       </footer>
     </PublicShell>
   )
