@@ -100,7 +100,7 @@ npm workspaces, three packages:
 
 ## Repository and licence
 
-- GitHub `paulrouge/lokhus`, private for now. It will go public as read-only source: issues, discussions, wiki and outside pull requests stay off; reports go to security@lokhus.com (`SECURITY.md`). Scan the full git history for secrets before making it public.
+- GitHub `paulrouge/lokhus`, public as read-only source: issues, discussions, wiki and outside pull requests stay off; reports go to security@lokhus.com (`SECURITY.md`). Everything pushed here is public at once: never commit secrets, `.env`, `data/` or `internal/`. History before the public release lives in the private `paulrouge/lokhus-private` (archived).
 - Licence: FSL-1.1-ALv2 (`LICENSE.md`), also set in every `package.json`. New dependencies must allow that; check their licence, not only `npm audit`. Reown/WalletConnect has its own licence with a free tier of 500 MAU / 2.5M RPC calls a month.
 
 ## Roadmap
