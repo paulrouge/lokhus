@@ -12,4 +12,5 @@ export default defineConfig({
   },
   esbuild: { legalComments: 'eof' },
   build: { chunkSizeWarningLimit: 4000, sourcemap: true },
+  ssr: { noExternal: true },
 })

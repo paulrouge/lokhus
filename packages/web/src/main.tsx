@@ -27,6 +27,7 @@ import { Trust } from './pages/Trust.tsx'
 import { SignIn } from './pages/SignIn.tsx'
 import { refreshAuth, useAuth } from './lib/auth.ts'
 import { Settings } from './pages/Settings.tsx'
+import { usePageMeta } from './seo.ts'
 import '@fontsource-variable/fraunces/full.css'
 import './styles.css'
 
@@ -48,6 +49,7 @@ const PUBLIC_PAGES: Record<string, ComponentType> = { '/security': PublicSecurit
 const SignedIn = ({ raw }: { raw: HttpStorage }) => {
   const status = useAuth()
   const { pathname } = useLocation()
+  usePageMeta(status?.signedIn ? undefined : pathname)
   if (!status) return null
   if (!status.signedIn || !status.account) {
     const PublicPage = PUBLIC_PAGES[pathname]

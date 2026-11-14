@@ -3357,6 +3357,14 @@ p.verdict {
   color: var(--accent);
 }
 
+.landing-source {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  margin-top: 14px;
+}
+
 .trust-detail {
   max-width: 36em;
   font-size: 16px;

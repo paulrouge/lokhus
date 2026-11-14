@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /welcome
+Allow: /trust
+Allow: /security
+Allow: /best-practice
+Allow: /llms.txt
+Disallow: /
+
+Sitemap: https://lokhus.com/sitemap.xml

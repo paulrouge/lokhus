@@ -1,0 +1,22 @@
+# Lokhus
+
+> Lokhus is a personal console for Safe multisig accounts. One person keeps long-term crypto in a Safe that several of their own keys protect (hardware wallets, cards, phones, browser wallets), so losing one key cannot empty it.
+
+- Every transaction is simulated against the chain first, so you approve what it does, not raw bytes.
+- Signing walks you through your own wallets one at a time and shows which signature is still missing. Ledger, WalletConnect and browser wallets are supported.
+- Swaps between any two tokens on the Safe's chain and supplying to the SODAX money market, with every quote and calldata checked in the browser before signing.
+- Safe 1.3.0 and 1.4.1 on Polygon, Sonic, Base and Ethereum.
+- Lokhus never holds keys or seed phrases. Transactions go straight to the chain over public RPCs; there is no Safe backend.
+- Hosted at lokhus.com with passkey sign-in and end-to-end encrypted account data, or self-hosted with data in a local SQLite file.
+- Independent project, not made or endorsed by Safe, SODAX or Robinhood. Source: https://github.com/paulrouge/lokhus (FSL-1.1-ALv2).
+
+## Pages
+
+- [Welcome](https://lokhus.com/welcome): what Lokhus does
+- [Trust](https://lokhus.com/trust): every risk of the hosted app and what handles it
+- [Security](https://lokhus.com/security): live checks of the Safe and SODAX contracts
+- [Best practice](https://lokhus.com/best-practice): choosing signers, backups and recovery
+
+## Contact
+
+- Security reports: security@lokhus.com
