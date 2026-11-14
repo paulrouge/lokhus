@@ -1,0 +1,30 @@
+services:
+  postgres:
+    image: postgres:18.1-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: lokhus
+      POSTGRES_USER: lokhus
+      POSTGRES_PASSWORD: lokhus-local-only
+    volumes:
+      - lokhus-postgres:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U lokhus -d lokhus']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  lokhus:
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:8787:8787'
+    environment:
+      DATABASE_URL: postgres://lokhus:lokhus-local-only@postgres:5432/lokhus
+      LOKHUS_MODE: self
+      LOKHUS_HOSTS: ''
+      LOKHUS_TRUST_PROXY: '0'
+
+volumes:
+  lokhus-postgres:

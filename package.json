@@ -1,0 +1,23 @@
+{
+  "name": "lokhus",
+  "private": true,
+  "license": "FSL-1.1-ALv2",
+  "type": "module",
+  "workspaces": [
+    "packages/core",
+    "packages/server",
+    "packages/web"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "typecheck": "tsc -p packages/core && tsc -p packages/server && tsc -p packages/web",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "5.9.3",
+    "vitest": "5.1.0"
+  }
+}

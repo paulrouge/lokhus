@@ -1,0 +1,34 @@
+[Unit]
+Description=Lokhus
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=lokhus
+Group=lokhus
+WorkingDirectory=/opt/lokhus
+Environment=NODE_ENV=production
+Environment=LOKHUS_MODE=hosted
+Environment=LOKHUS_HOSTS=lokhus.com
+Environment=LOKHUS_TRUST_PROXY=1
+Environment=LOKHUS_BIND=127.0.0.1
+Environment=PORT_API=8787
+Environment=MSA_DB=/var/lib/lokhus/app.db
+EnvironmentFile=/etc/lokhus/lokhus.env
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning packages/server/src/index.ts
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/lokhus
+StateDirectory=lokhus
+StateDirectoryMode=0700
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+MemoryDenyWriteExecute=false
+
+[Install]
+WantedBy=multi-user.target

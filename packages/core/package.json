@@ -1,0 +1,19 @@
+{
+  "name": "@msa/core",
+  "private": true,
+  "license": "FSL-1.1-ALv2",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./storage": "./src/storage.ts",
+    "./acknowledgment": "./src/acknowledgment.ts"
+  },
+  "dependencies": {
+    "@safe-global/protocol-kit": "8.0.11",
+    "@safe-global/safe-deployments": "1.37.67",
+    "viem": "2.57.18"
+  },
+  "devDependencies": {
+    "@safe-global/types-kit": "4.0.1"
+  }
+}

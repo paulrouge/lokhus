@@ -1,0 +1,8 @@
+lokhus.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8787
+}
+
+www.lokhus.com {
+	redir https://lokhus.com{uri} permanent
+}
