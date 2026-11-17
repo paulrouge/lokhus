@@ -45,3 +45,15 @@ export const acknowledgmentMessage = ({ kind, signer, safe, chainId, blockNumber
     `Date: ${date}`,
   ].join('\n')
 }
+
+export const ELIGIBILITY = {
+  version: 1,
+  statement:
+    'I am not a US person: not a citizen or resident of the United States, and not a company or other entity organised there. I do not live in, and will not use Lokhus from, the United States, Cuba, Iran, North Korea or Syria. I am not named on a US, EU or UN sanctions list.',
+}
+
+export interface EligibilityConfirmation {
+  version: number
+  statement: string
+  confirmedAt: string
+}

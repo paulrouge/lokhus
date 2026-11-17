@@ -1,7 +1,7 @@
 APP_PORT ?= 8787
 NODE := node --disable-warning=ExperimentalWarning --env-file-if-exists=.env
 
-.PHONY: run serve dev install build test typecheck check e2e reset-login
+.PHONY: run serve dev install build test typecheck check e2e reset-login geoip
 
 run: build serve
 
@@ -35,3 +35,6 @@ e2e: install
 
 reset-login:
 	PORT_API=$(APP_PORT) $(NODE) scripts/reset-login.ts
+
+geoip:
+	$(NODE) scripts/fetch-geoip.ts

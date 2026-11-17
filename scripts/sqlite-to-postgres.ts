@@ -31,6 +31,7 @@ const TABLES: { name: string; convert?: (row: Row) => Row }[] = [
   { name: 'recovery_wallets' },
   { name: 'recovery_wallet_addresses' },
   { name: 'acknowledgments' },
+  { name: 'eligibility_confirmations' },
   {
     name: 'docs',
     convert: (row) => ({ account: row.account, collection: row.collection, id: row.id, data: row.data, bytes: Buffer.byteLength(row.data as string) }),

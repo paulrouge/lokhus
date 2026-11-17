@@ -13,6 +13,13 @@ ARG VITE_WC_PROJECT_ID=
 ENV VITE_WC_PROJECT_ID=${VITE_WC_PROJECT_ID}
 RUN npm run build -w @msa/web && find packages/web/dist -name '*.map' -delete
 
+FROM ${NODE_IMAGE} AS geoip
+WORKDIR /app
+COPY packages packages
+COPY scripts/fetch-geoip.ts scripts/
+ARG LOKHUS_GEOIP_MONTH=
+RUN LOKHUS_GEOIP_MONTH=${LOKHUS_GEOIP_MONTH} node scripts/fetch-geoip.ts geoip/dbip-country-lite.csv.gz
+
 FROM ${NODE_IMAGE} AS deps
 WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
@@ -36,6 +43,7 @@ COPY packages/server/package.json packages/server/
 COPY packages/server/src packages/server/src
 COPY scripts/reset-login.ts scripts/sqlite-to-postgres.ts scripts/
 COPY --from=build /app/packages/web/dist packages/web/dist
+COPY --from=geoip /app/geoip geoip
 RUN ln -sfn ../../packages/core node_modules/@msa/core \
   && mkdir -p data && chown node:node data \
   && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack

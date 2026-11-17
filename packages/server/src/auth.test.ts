@@ -12,7 +12,8 @@ import { clientIp } from './http.ts'
 import { DEFAULT_LIMITS, loadConfig, type ServerConfig } from './config.ts'
 import type { WebAuthn } from './authRoutes.ts'
 import { BACKENDS, type TestBackend, type TestDatabase } from './testDatabases.ts'
-import { acknowledgmentMessage, type AcknowledgmentFields } from '@msa/core/acknowledgment'
+import { ELIGIBILITY, acknowledgmentMessage, type AcknowledgmentFields } from '@msa/core/acknowledgment'
+import { createGeoBlock, ipNumber, type GeoBlock } from './geo.ts'
 
 const dirs: string[] = []
 const servers: Server[] = []
@@ -61,7 +62,7 @@ interface Reply {
   headers: Record<string, string | string[] | undefined>
 }
 
-const start = async (db: TestDatabase, now?: () => number, overrides: Partial<ServerConfig> = {}) => {
+const start = async (db: TestDatabase, now?: () => number, overrides: Partial<ServerConfig> = {}, geo?: GeoBlock) => {
   const webauthn = fakeWebAuthn()
   let app: ReturnType<typeof createApp> | null = null
   const server = createServer((req, res) => void app!(req, res))
@@ -71,7 +72,7 @@ const start = async (db: TestDatabase, now?: () => number, overrides: Partial<Se
   const config: ServerConfig = { ...loadConfig({ PORT_API: String(port) }), ...overrides }
   const host = config.mode === 'hosted' && config.hosts[0] ? config.hosts[0] : `localhost:${port}`
   const origin = config.mode === 'hosted' && config.hosts[0] ? `https://${config.hosts[0]}` : `http://localhost:${port}`
-  app = createApp({ database: db.database, config, staticDir: join(tmpdir(), 'missing-static'), webauthn, now })
+  app = createApp({ database: db.database, config, staticDir: join(tmpdir(), 'missing-static'), webauthn, now, geo })
   let cookie = ''
   const call = (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) =>
     new Promise<Reply>((resolve, reject) => {
@@ -106,10 +107,10 @@ const start = async (db: TestDatabase, now?: () => number, overrides: Partial<Se
       req.end(payload)
     })
   const setupCode = () => db.database.auth({ now }).createSetupCode()
-  const register = async (name: string, credentialId: string, given?: string) => {
+  const register = async (name: string, credentialId: string, given?: string, eligibility: number | undefined = ELIGIBILITY.version) => {
     const code = given ?? (config.mode === 'self' ? await setupCode() : undefined)
-    await call('POST', '/api/auth/register/options', { accountName: name, setupCode: code })
-    return call('POST', '/api/auth/register/verify', { setupCode: code, response: { id: credentialId, challenge: webauthn.lastChallenge } })
+    await call('POST', '/api/auth/register/options', { accountName: name, setupCode: code, eligibility })
+    return call('POST', '/api/auth/register/verify', { setupCode: code, eligibility, response: { id: credentialId, challenge: webauthn.lastChallenge } })
   }
   const login = async (credentialId: string) => {
     await call('POST', '/api/auth/login/options', {})
@@ -420,13 +421,68 @@ describe.each(BACKENDS)('$name', { timeout: 60_000 }, (backend) => {
 
     it('rate limits sign-up per client ip and answers 429 with Retry-After', async () => {
       const app = await start(await database(), undefined, hosted({ limits: { ...DEFAULT_LIMITS, registerPerHour: 2 } }))
-      const attempt = (ip: string) => app.call('POST', '/api/auth/register/options', { accountName: 'Spam' }, { 'X-Forwarded-For': `9.9.9.9, ${ip}` })
+      const attempt = (ip: string) => app.call('POST', '/api/auth/register/options', { accountName: 'Spam', eligibility: ELIGIBILITY.version }, { 'X-Forwarded-For': `9.9.9.9, ${ip}` })
       expect((await attempt('1.1.1.1')).status).toBe(200)
       expect((await attempt('1.1.1.1')).status).toBe(200)
       const limited = await attempt('1.1.1.1')
       expect(limited.status).toBe(429)
       expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0)
       expect((await attempt('2.2.2.2')).status).toBe(200)
+    })
+
+    it('requires the eligibility statement at sign-up and before any data, and keeps it as a record', async () => {
+      const db = await database()
+      const app = await start(db, undefined, hosted())
+      const refused = await app.call('POST', '/api/auth/register/options', { accountName: 'Eve' })
+      expect(refused.status).toBe(400)
+      expect(refused.body).toMatchObject({ code: 'eligibility' })
+      expect((await app.register('Alice', 'alice-1')).status).toBe(200)
+      expect((await app.call('GET', '/api/auth/status')).body).toMatchObject({ signedIn: true, needsEligibility: false, regionBlocked: false })
+      expect((await app.call('GET', '/api/notes')).status).toBe(200)
+      expect((await db.all('eligibility_confirmations'))[0]).toMatchObject({ version: ELIGIBILITY.version, statement: ELIGIBILITY.statement })
+      expect(((await app.call('GET', '/api/auth/export')).body as { eligibility: unknown[] }).eligibility).toHaveLength(1)
+      await app.call('DELETE', '/api/auth/account', { confirmName: 'Alice' })
+      expect(await db.count('eligibility_confirmations')).toBe(0)
+    })
+
+    it('asks existing accounts to confirm before they reach their data', async () => {
+      const db = await database()
+      const app = await start(db)
+      await app.register('Bob', 'bob-1')
+      const accountId = ((await app.call('GET', '/api/auth/status')).body as { account: { id: string } }).account.id
+      expect(await db.count('eligibility_confirmations')).toBe(0)
+      const fresh = await start(db, undefined, hosted())
+      fresh.setCookie(app.cookie())
+      expect((await fresh.call('GET', '/api/auth/status')).body).toMatchObject({ account: { id: accountId }, needsEligibility: true })
+      const gated = await fresh.call('GET', '/api/notes')
+      expect(gated.status).toBe(403)
+      expect(gated.body).toMatchObject({ code: 'eligibility' })
+      expect((await fresh.call('POST', '/api/auth/eligibility', { version: 0 })).status).toBe(400)
+      expect((await fresh.call('POST', '/api/auth/eligibility', { version: ELIGIBILITY.version })).status).toBe(200)
+      expect((await fresh.call('GET', '/api/auth/status')).body).toMatchObject({ needsEligibility: false })
+      expect((await fresh.call('GET', '/api/notes')).status).toBe(200)
+    })
+
+    it('blocks the API for visitors from blocked countries but still answers status', async () => {
+      const db = await database()
+      const geo = createGeoBlock([{ from: ipNumber('9.0.0.0')!, to: ipNumber('9.255.255.255')!, country: 'US' }], ['US'])
+      const app = await start(db, undefined, hosted({ blockedCountries: ['US'] }), geo)
+      const from = (ip: string) => ({ 'X-Forwarded-For': ip })
+      expect((await app.register('Alice', 'alice-1')).status).toBe(200)
+      const status = await app.call('GET', '/api/auth/status', undefined, from('9.1.2.3'))
+      expect(status.body).toMatchObject({ regionBlocked: true, signedIn: true })
+      const blocked = await app.call('GET', '/api/notes', undefined, from('9.1.2.3'))
+      expect(blocked.status).toBe(451)
+      expect(blocked.body).toMatchObject({ code: 'region' })
+      expect((await app.call('POST', '/api/auth/login/options', {}, from('9.1.2.3'))).status).toBe(451)
+      expect((await app.call('POST', '/api/auth/register/options', { accountName: 'Eve', eligibility: 1 }, from('9.1.2.3'))).status).toBe(451)
+      expect((await app.call('GET', '/api/notes', undefined, from('8.1.2.3'))).status).toBe(200)
+      expect((await app.call('GET', '/api/auth/status', undefined, from('8.1.2.3'))).body).toMatchObject({ regionBlocked: false })
+      expect((await app.call('POST', '/api/auth/logout', {}, from('9.1.2.3'))).status).toBe(200)
+    })
+
+    it('refuses to start without a GeoIP database when countries are blocked', async () => {
+      await expect(start(await database(), undefined, hosted({ blockedCountries: ['US'] }))).rejects.toThrow(/GeoIP/)
     })
   })
 
@@ -791,6 +847,16 @@ describe('config', () => {
       allowLocalhost: false,
     })
     expect(loadConfig({ LOKHUS_MODE: 'hosted', LOKHUS_DEV_LOCALHOST: '1' }).allowLocalhost).toBe(true)
+  })
+
+  it('blocks the US and sanctioned countries by default in hosted mode only', () => {
+    const hostedEnv = { LOKHUS_MODE: 'hosted', LOKHUS_HOSTS: 'lokhus.com' }
+    expect(loadConfig({}).blockedCountries).toEqual([])
+    expect(loadConfig(hostedEnv).blockedCountries).toEqual(['US', 'CU', 'IR', 'KP', 'SY'])
+    expect(loadConfig({ ...hostedEnv, LOKHUS_BLOCKED_COUNTRIES: 'us, ru' }).blockedCountries).toEqual(['US', 'RU'])
+    expect(loadConfig({ ...hostedEnv, LOKHUS_BLOCKED_COUNTRIES: 'none' }).blockedCountries).toEqual([])
+    expect(() => loadConfig({ ...hostedEnv, LOKHUS_BLOCKED_COUNTRIES: 'USA' })).toThrow(/two-letter/)
+    expect(loadConfig({ LOKHUS_GEOIP_FILE: '/tmp/x.csv.gz' }).geoipFile).toBe('/tmp/x.csv.gz')
   })
 
   it('reads LOKHUS_PROXY_HOPS and picks that client address from the right', () => {

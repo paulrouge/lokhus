@@ -4,15 +4,16 @@ import { extname, join, normalize } from 'node:path'
 import { COLLECTIONS, type CollectionName } from '@msa/core/storage'
 import { InvalidPageQuery, QuotaExceeded, type DocStore } from './db.ts'
 import { parseListQuery } from './query.ts'
-import { HttpError, isSecureRequest, readBody, readCookie, send } from './http.ts'
+import { HttpError, clientIp, isSecureRequest, readBody, readCookie, send } from './http.ts'
 import { SESSION_COOKIE, type AuthStore } from './auth.ts'
 import type { VaultStore } from './vault.ts'
 import type { AcknowledgmentStore } from './acknowledgments.ts'
 import type { Database } from './database.ts'
-import { currentSession, handleAuth, rateLimit, simpleWebAuthn, type WebAuthn } from './authRoutes.ts'
+import { currentSession, handleAuth, isEligible, rateLimit, simpleWebAuthn, type WebAuthn } from './authRoutes.ts'
 import type { ServerConfig } from './config.ts'
 import type { RateLimiter } from './limits.ts'
 import { securityHeaders } from './headers.ts'
+import type { GeoBlock } from './geo.ts'
 
 export interface AppOptions {
   database: Database
@@ -25,6 +26,7 @@ export interface AppOptions {
   acknowledgments?: AcknowledgmentStore
   docStore?: (account: string) => DocStore
   limiter?: RateLimiter
+  geo?: GeoBlock
 }
 
 const MIME: Record<string, string> = {
@@ -42,6 +44,8 @@ const MIME: Record<string, string> = {
 
 const PRERENDERED = new Set(['/welcome', '/trust', '/security', '/best-practice'])
 
+const OPEN_TO_BLOCKED_REGIONS = new Set(['/api/auth/status', '/api/auth/logout'])
+
 const SELF_ROBOTS = 'User-agent: *\nDisallow: /\n'
 
 export const createApp = (options: AppOptions) => {
@@ -52,6 +56,16 @@ export const createApp = (options: AppOptions) => {
   const acknowledgments = options.acknowledgments ?? database.acknowledgments(options.now)
   const webauthn = options.webauthn ?? simpleWebAuthn
   const limiter = options.limiter ?? database.limiter(options.now)
+  const geo = options.geo ?? null
+  if (config.blockedCountries.length > 0 && !geo) throw new Error('Blocking countries needs a GeoIP database')
+  const regionBlocked = (req: IncomingMessage) => !!geo && geo.blockedCountry(clientIp(req, config.trustProxy, config.proxyHops)) !== null
+  const eligibleAccounts = new Set<string>()
+  const requireEligible = async (accountId: string) => {
+    if (eligibleAccounts.has(accountId)) return
+    if (!(await isEligible({ auth, acknowledgments }, accountId)))
+      throw new HttpError(403, 'Confirm that you may use Lokhus first.', null, 'eligibility')
+    eligibleAccounts.add(accountId)
+  }
   const loopback = `127.0.0.1:${port}`
   const allowedHosts = new Set([
     ...(config.allowLocalhost ? [loopback, `localhost:${port}`] : []),
@@ -78,6 +92,7 @@ export const createApp = (options: AppOptions) => {
   const handleDocs = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     const session = await currentSession(req, res, auth, config.trustProxy)
     if (!session) throw new HttpError(401, 'Sign in first')
+    await requireEligible(session.accountId)
     const store = storeFor(session.accountId)
     const [, , collectionName, rawId, ...rest] = url.pathname.split('/')
     if (rest.length > 0) throw new HttpError(404, 'Not found')
@@ -167,8 +182,20 @@ export const createApp = (options: AppOptions) => {
       if (req.url === '/healthz' && (req.method === 'GET' || req.method === 'HEAD')) return await health(res)
       if (!isTrustedRequest(req)) throw new HttpError(403, 'Forbidden')
       const url = new URL(req.url ?? '/', `http://${req.headers.host}`)
+      const blocked = url.pathname.startsWith('/api/') && regionBlocked(req)
+      if (blocked && !OPEN_TO_BLOCKED_REGIONS.has(url.pathname)) throw new HttpError(451, 'Lokhus is not available in your region.', null, 'region')
       if (url.pathname.startsWith('/api/auth/'))
-        return await handleAuth(req, res, url.pathname.slice('/api/auth/'.length), { auth, vault, acknowledgments, webauthn, config, limiter, now: options.now ?? Date.now, storeFor })
+        return await handleAuth(req, res, url.pathname.slice('/api/auth/'.length), {
+          auth,
+          vault,
+          acknowledgments,
+          webauthn,
+          config,
+          limiter,
+          now: options.now ?? Date.now,
+          regionBlocked: blocked,
+          storeFor,
+        })
       if (url.pathname.startsWith('/api/')) return await handleDocs(req, res, url)
       if (req.method !== 'GET') throw new HttpError(405, 'Method not allowed')
       if (req.headers.host === loopback) {

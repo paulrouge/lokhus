@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser'
-import type { Acknowledgment, AcknowledgmentFields, AcknowledgmentKind } from '@msa/core'
+import { ELIGIBILITY, type Acknowledgment, type AcknowledgmentFields, type AcknowledgmentKind, type EligibilityConfirmation } from '@msa/core'
 import { PRF_INPUT, toB64u } from '../crypto/keys.ts'
 
 export interface AuthStatus {
@@ -11,6 +11,8 @@ export interface AuthStatus {
   awaitingPasskey: boolean
   signedIn: boolean
   account: { id: string; name: string } | null
+  regionBlocked: boolean
+  needsEligibility: boolean
 }
 
 export interface PasskeyInfo {
@@ -58,6 +60,7 @@ const rawCall = async <T,>(path: string, method = 'GET', body?: unknown): Promis
   })
   if (response.status === 204) return null as T
   const data = (await response.json().catch(() => null)) as (T & { error?: string; code?: string }) | null
+  if (!response.ok && path !== 'status' && (data?.code === 'region' || data?.code === 'eligibility')) void refreshAuth()
   if (!response.ok) throw new AuthError(data?.error ?? `Request failed (${response.status})`, response.status, data?.code ?? null)
   return data as T
 }
@@ -105,6 +108,8 @@ const PRERENDER_STATUS: AuthStatus = {
   awaitingPasskey: false,
   signedIn: false,
   account: null,
+  regionBlocked: false,
+  needsEligibility: false,
 }
 
 export const useAuth = () => {
@@ -168,10 +173,10 @@ export const takeLastPasskey = () => {
   return used
 }
 
-export const createAccount = async (accountName: string, setupCode: string) => {
-  const options = await rawCall<RegistrationOptions>('register/options', 'POST', { accountName, setupCode })
+export const createAccount = async (accountName: string, setupCode: string, eligibility?: number) => {
+  const options = await rawCall<RegistrationOptions>('register/options', 'POST', { accountName, setupCode, eligibility })
   const { response, prf } = await register(options)
-  const result = await rawCall<{ passkeyId: string }>('register/verify', 'POST', { response, setupCode })
+  const result = await rawCall<{ passkeyId: string }>('register/verify', 'POST', { response, setupCode, eligibility })
   lastPasskey = await afterRegistration(result.passkeyId, prf)
   await refreshAuth()
 }
@@ -189,6 +194,11 @@ export const confirmWithPasskey = async (): Promise<PasskeyUse> => {
   const { response, prf } = await authenticate(options)
   const result = await rawCall<{ passkeyId: string }>('stepup/verify', 'POST', { response })
   return { passkeyId: result.passkeyId, prf }
+}
+
+export const confirmEligibility = async () => {
+  await rawCall('eligibility', 'POST', { version: ELIGIBILITY.version })
+  await refreshAuth()
 }
 
 export const signOut = async () => {
@@ -283,6 +293,8 @@ export interface Backup {
   exportedAt: string
   account: { id: string; name: string }
   vault: { check: string | null; keys: ({ passkeyId: string } & LockedKey)[]; recovery: LockedKey | null }
+  acknowledgments: Acknowledgment[]
+  eligibility: EligibilityConfirmation[]
   docs: { collection: string; id: string; data: unknown }[]
 }
 
