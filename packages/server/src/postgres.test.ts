@@ -29,7 +29,7 @@ describe.skipIf(!url)('postgres', { timeout: 60_000 }, () => {
     await Promise.all([open(), open()])
     await open()
     const versions = await withPostgresPool(url!, (pool) => pool.query(`SELECT version FROM ${schema}.schema_migrations`))
-    expect(versions.rows).toEqual([{ version: 1 }, { version: 2 }])
+    expect(versions.rows).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }])
   })
 
   it('shares rate limits between server processes', async () => {

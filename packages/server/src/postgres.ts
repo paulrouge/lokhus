@@ -36,7 +36,7 @@ import { GRANT_TTL_MS, sha256, type KeyKind, type LockedKey, type RecoveryWallet
 import { DEFAULT_LIMITS } from './config.ts'
 import type { RateLimiter } from './limits.ts'
 import type { Database } from './database.ts'
-import { toAcknowledgment, type AcknowledgmentStore } from './acknowledgments.ts'
+import { toAcknowledgment, toEligibility, type AcknowledgmentStore } from './acknowledgments.ts'
 
 type Query = pg.Pool | pg.PoolClient
 type Row = Record<string, unknown>
@@ -152,6 +152,15 @@ const MIGRATIONS = [
     signed_date text NOT NULL,
     created_at text NOT NULL,
     PRIMARY KEY (account_id, kind, version)
+  );
+  `,
+  `
+  CREATE TABLE eligibility_confirmations (
+    account_id text NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+    version integer NOT NULL,
+    statement text NOT NULL,
+    confirmed_at text NOT NULL,
+    PRIMARY KEY (account_id, version)
   );
   `,
 ]
@@ -739,6 +748,22 @@ export const openPostgres = async (url: string, options: PostgresOptions = {}): 
 }
 
 const createPgAcknowledgmentStore = (pool: pg.Pool, now: () => number = Date.now): AcknowledgmentStore => {
+  const findEligibility = async (accountId: string, version: number) => {
+    const row = await one(pool, 'SELECT * FROM eligibility_confirmations WHERE account_id = $1 AND version = $2', [accountId, version])
+    return row ? toEligibility(row) : null
+  }
+  const eligibility: Pick<AcknowledgmentStore, 'eligibility' | 'confirmEligibility' | 'listEligibility'> = {
+    eligibility: findEligibility,
+    confirmEligibility: async (accountId, version, statement) => {
+      await pool.query(
+        'INSERT INTO eligibility_confirmations (account_id, version, statement, confirmed_at) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING',
+        [accountId, version, statement, iso(now())],
+      )
+      return (await findEligibility(accountId, version))!
+    },
+    listEligibility: async (accountId) =>
+      (await rows(pool, 'SELECT * FROM eligibility_confirmations WHERE account_id = $1 ORDER BY version', [accountId])).map(toEligibility),
+  }
   const get = async (accountId: string, kind: string, version: number) => {
     const row = await one(pool, 'SELECT * FROM acknowledgments WHERE account_id = $1 AND kind = $2 AND version = $3', [accountId, kind, version])
     return row ? toAcknowledgment(row) : null
@@ -755,6 +780,7 @@ const createPgAcknowledgmentStore = (pool: pg.Pool, now: () => number = Date.now
     },
     list: async (accountId) =>
       (await rows(pool, 'SELECT * FROM acknowledgments WHERE account_id = $1 ORDER BY created_at, kind, version', [accountId])).map(toAcknowledgment),
+    ...eligibility,
   }
 }
 

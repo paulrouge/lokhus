@@ -34,7 +34,7 @@ type Stage =
   | { kind: 'migrating'; done: number }
   | { kind: 'ready' }
 
-const Screen = ({ title, lede, children }: { title: string; lede?: ReactNode; children?: ReactNode }) => (
+export const Screen = ({ title, lede, children }: { title: string; lede?: ReactNode; children?: ReactNode }) => (
   <div className="landing landing-signin">
     <header className="landing-bar">
       <span className="landing-brand">

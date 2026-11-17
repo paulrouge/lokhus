@@ -45,7 +45,7 @@ const RISKS: Risk[] = [
     measures: [
       'Everything is encrypted in your browser before it’s sent. The key is locked by your passkey and by your recovery code. We can’t read your data, and neither can anyone who steals the database.',
       'The server only sees what it needs to route data: collection names, sizes, timestamps and block numbers.',
-      'One exception is stored readable: the statement you sign before your first stock trade, with the signer, Safe address, chain and block it names. It is our record that you accepted it, and it is deleted with your account.',
+      'Two exceptions are stored readable: the statement you sign before your first stock trade, with the signer, Safe address, chain and block it names, and the time you confirmed you are not a US person or in a restricted country. They are our record that you accepted them, and they are deleted with your account.',
       'Sessions are random, stored only as hashes, in HttpOnly, SameSite=Strict cookies.',
       'Adding passkeys, exporting and deleting the account need a fresh passkey check.',
     ],
@@ -66,9 +66,10 @@ const RISKS: Risk[] = [
     measures: [
       'The Stocks action explains what you are buying and links to Robinhood’s own documentation and prospectus.',
       'On lokhus.com, before your first stock trade you sign a statement with one of your Safe’s signers that you understand the risks and may legally hold these tokens.',
+      'lokhus.com is not offered in the United States, Cuba, Iran, North Korea or Syria. Visits from those countries are blocked by IP address, and every account confirms its holder is not a US person and not in one of them.',
       'Every trade is decoded and checked like any other SODAX swap, and the output always returns to your Safe.',
     ],
-    gap: 'SODAX’s copies can’t be redeemed for Robinhood’s tokens yet, so the only way out is to sell. Neither Lokhus nor SODAX checks who you are or where you live.',
+    gap: 'SODAX’s copies can’t be redeemed for Robinhood’s tokens yet, so the only way out is to sell. Neither Lokhus nor SODAX checks your identity: the country check uses your IP address, which a VPN can hide.',
     you: 'Read Robinhood’s documentation, check that you may hold these tokens where you live (they may not be offered to US persons), and size positions for the chance of losing them.',
   },
   {
@@ -143,7 +144,12 @@ export const Trust = () => {
 
       <footer className="landing-foot">
         The contracts your funds touch (Safe, SODAX) are checked live on the <Link to="/security">Security page</Link>. Lokhus is an
-        independent project, not made or endorsed by Safe, SODAX or Robinhood; it uses their public contracts and APIs.
+        independent project, not made or endorsed by Safe, SODAX or Robinhood; it uses their public contracts and APIs. Country
+        lookups use{' '}
+        <a href="https://db-ip.com" target="_blank" rel="noopener noreferrer">
+          IP Geolocation by DB-IP
+        </a>{' '}
+        (CC BY 4.0), looked up on our own server without any third-party service.
         <SourceLink />
       </footer>
     </PublicShell>

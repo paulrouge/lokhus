@@ -3,6 +3,8 @@ import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { createAccount, signIn, useAuth } from '../lib/auth.ts'
 import { Button, ErrorNote } from '../components/ui.tsx'
 import { errorMessage } from '../lib/format.ts'
+import { ELIGIBILITY } from '@msa/core'
+import { EligibilityCheck, RegionBlockedNotice } from '../components/Eligibility.tsx'
 
 const onLoopbackAddress = () => window.location.hostname === '127.0.0.1' || window.location.hostname === '[::1]'
 
@@ -37,6 +39,7 @@ export const SignIn = () => {
   const setupCode = params.get('setup')?.trim() ?? ''
   const [name, setName] = useState('')
   const [wantsAccount, setWantsAccount] = useState(params.get('new') === '1')
+  const [eligible, setEligible] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -70,6 +73,11 @@ export const SignIn = () => {
       <main className="signin">
         {!status ? (
           <p className="signin-lede">Loading…</p>
+        ) : status.regionBlocked ? (
+          <>
+            <h1 className="signin-title">Not available here</h1>
+            <RegionBlockedNotice />
+          </>
         ) : needsSetupLink ? (
           <>
             <h1 className="signin-title">{resetting ? 'Create a new passkey' : 'Create your account'}</h1>
@@ -83,7 +91,7 @@ export const SignIn = () => {
           <form
             onSubmit={(event) => {
               event.preventDefault()
-              void run(() => createAccount(name, setupCode))
+              void run(() => createAccount(name, setupCode, hosted ? ELIGIBILITY.version : undefined))
             }}
           >
             <h1 className="signin-title">Create your account</h1>
@@ -95,9 +103,10 @@ export const SignIn = () => {
               <span>Account name</span>
               <input value={name} onChange={(event) => setName(event.target.value)} placeholder="For example, Personal" maxLength={60} required autoFocus />
             </label>
+            {hosted && <EligibilityCheck checked={eligible} onChange={setEligible} />}
             <ErrorNote error={error} />
             <div className="landing-actions">
-              <Button type="submit" variant="primary" className="btn-lg" busy={busy} disabled={!name.trim()}>
+              <Button type="submit" variant="primary" className="btn-lg" busy={busy} disabled={!name.trim() || (hosted && !eligible)}>
                 Create passkey
               </Button>
             </div>
@@ -160,7 +169,7 @@ export const SignIn = () => {
             )}
           </>
         )}
-        {status && <WhyPasskeys />}
+        {status && !status.regionBlocked && <WhyPasskeys />}
         {onLoopbackAddress() && (
           <p className="signin-note">
             Passkeys do not work on {window.location.hostname}. Open{' '}

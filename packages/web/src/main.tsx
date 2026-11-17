@@ -7,6 +7,7 @@ import { createHttpStorage, type HttpStorage } from './storage/httpStorage.ts'
 import { createEncryptedStorage } from './crypto/encryptedStorage.ts'
 import { vaultKeys } from './lib/vault.ts'
 import { VaultGate } from './components/VaultGate.tsx'
+import { EligibilityGate, RegionBlocked } from './components/Eligibility.tsx'
 import { Recover } from './pages/Recover.tsx'
 import { DataProvider, useChains, useStorage } from './state/data.tsx'
 import { WalletProvider } from './state/wallet.tsx'
@@ -51,8 +52,9 @@ const SignedIn = ({ raw }: { raw: HttpStorage }) => {
   const { pathname } = useLocation()
   usePageMeta(status?.signedIn ? undefined : pathname)
   if (!status) return null
-  if (!status.signedIn || !status.account) {
-    const PublicPage = PUBLIC_PAGES[pathname]
+  const PublicPage = PUBLIC_PAGES[pathname]
+  if (status.regionBlocked && !PublicPage) return <RegionBlocked />
+  if (!status.signedIn || !status.account || status.regionBlocked) {
     if (!PublicPage) return <Navigate to="/welcome" replace />
     return (
       <PublicShell>
@@ -62,6 +64,7 @@ const SignedIn = ({ raw }: { raw: HttpStorage }) => {
       </PublicShell>
     )
   }
+  if (status.needsEligibility) return <EligibilityGate />
   return (
     <VaultGate key={status.account.id} accountId={status.account.id} raw={raw}>
     <WalletProvider>

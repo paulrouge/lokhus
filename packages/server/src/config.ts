@@ -22,6 +22,8 @@ export interface ServerConfig {
   trustProxy: boolean
   proxyHops: number
   allowLocalhost: boolean
+  blockedCountries: string[]
+  geoipFile: string | null
   limits: Limits
 }
 
@@ -39,7 +41,19 @@ export const DEFAULT_LIMITS: Limits = {
   writesPerMinute: 1_200,
 }
 
+export const DEFAULT_BLOCKED_COUNTRIES = ['US', 'CU', 'IR', 'KP', 'SY']
+
 export class ConfigError extends Error {}
+
+const parseCountries = (value: string | undefined, mode: Mode) => {
+  const text = value?.trim().toUpperCase() ?? ''
+  if (text === 'NONE') return []
+  if (!text) return mode === 'hosted' ? DEFAULT_BLOCKED_COUNTRIES : []
+  const countries = [...new Set(text.split(',').map((code) => code.trim()).filter(Boolean))]
+  const invalid = countries.filter((code) => !/^[A-Z]{2}$/.test(code))
+  if (invalid.length) throw new ConfigError(`LOKHUS_BLOCKED_COUNTRIES takes two-letter country codes or none, got ${invalid.join(', ')}`)
+  return countries
+}
 
 export const parseHosts = (value: string | undefined) =>
   (value ?? '')
@@ -68,6 +82,8 @@ export const loadConfig = (env: Record<string, string | undefined>): ServerConfi
     trustProxy: flag(env.LOKHUS_TRUST_PROXY),
     proxyHops,
     allowLocalhost,
+    blockedCountries: parseCountries(env.LOKHUS_BLOCKED_COUNTRIES, mode),
+    geoipFile: env.LOKHUS_GEOIP_FILE?.trim() || null,
     limits: DEFAULT_LIMITS,
   }
 }

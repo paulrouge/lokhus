@@ -1,5 +1,12 @@
 import type { DatabaseSync } from 'node:sqlite'
-import { ACKNOWLEDGMENTS, acknowledgmentMessage, isAcknowledgmentKind, type Acknowledgment, type AcknowledgmentKind } from '@msa/core/acknowledgment'
+import {
+  ACKNOWLEDGMENTS,
+  acknowledgmentMessage,
+  isAcknowledgmentKind,
+  type Acknowledgment,
+  type AcknowledgmentKind,
+  type EligibilityConfirmation,
+} from '@msa/core/acknowledgment'
 import { HttpError } from './http.ts'
 import { recoverPersonalSigner } from './walletSignature.ts'
 
@@ -9,6 +16,9 @@ export interface AcknowledgmentStore {
   get(accountId: string, kind: AcknowledgmentKind, version: number): Promise<Acknowledgment | null>
   add(accountId: string, acknowledgment: Omit<Acknowledgment, 'createdAt'>): Promise<Acknowledgment>
   list(accountId: string): Promise<Acknowledgment[]>
+  eligibility(accountId: string, version: number): Promise<EligibilityConfirmation | null>
+  confirmEligibility(accountId: string, version: number, statement: string): Promise<EligibilityConfirmation>
+  listEligibility(accountId: string): Promise<EligibilityConfirmation[]>
 }
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/
@@ -46,6 +56,12 @@ export const toAcknowledgment = (row: Record<string, unknown>): Acknowledgment =
   createdAt: row.created_at as string,
 })
 
+export const toEligibility = (row: Record<string, unknown>): EligibilityConfirmation => ({
+  version: Number(row.version),
+  statement: row.statement as string,
+  confirmedAt: row.confirmed_at as string,
+})
+
 export const createAcknowledgmentStore = (db: DatabaseSync, now: () => number = Date.now): AcknowledgmentStore => {
   db.exec(`
     CREATE TABLE IF NOT EXISTS acknowledgments (
@@ -62,7 +78,19 @@ export const createAcknowledgmentStore = (db: DatabaseSync, now: () => number = 
       created_at TEXT NOT NULL,
       PRIMARY KEY (account_id, kind, version)
     );
+    CREATE TABLE IF NOT EXISTS eligibility_confirmations (
+      account_id TEXT NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+      version INTEGER NOT NULL,
+      statement TEXT NOT NULL,
+      confirmed_at TEXT NOT NULL,
+      PRIMARY KEY (account_id, version)
+    );
   `)
+
+  const eligibility = (accountId: string, version: number) => {
+    const row = db.prepare('SELECT * FROM eligibility_confirmations WHERE account_id = ? AND version = ?').get(accountId, version) as Row | undefined
+    return row ? toEligibility(row) : null
+  }
 
   const get = (accountId: string, kind: AcknowledgmentKind, version: number) => {
     const row = db.prepare('SELECT * FROM acknowledgments WHERE account_id = ? AND kind = ? AND version = ?').get(accountId, kind, version) as Row | undefined
@@ -80,5 +108,17 @@ export const createAcknowledgmentStore = (db: DatabaseSync, now: () => number = 
     },
     list: async (accountId) =>
       (db.prepare('SELECT * FROM acknowledgments WHERE account_id = ? ORDER BY created_at, kind, version').all(accountId) as Row[]).map(toAcknowledgment),
+    eligibility: async (accountId, version) => eligibility(accountId, version),
+    confirmEligibility: async (accountId, version, statement) => {
+      db.prepare('INSERT INTO eligibility_confirmations (account_id, version, statement, confirmed_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING').run(
+        accountId,
+        version,
+        statement,
+        new Date(now()).toISOString(),
+      )
+      return eligibility(accountId, version)!
+    },
+    listEligibility: async (accountId) =>
+      (db.prepare('SELECT * FROM eligibility_confirmations WHERE account_id = ? ORDER BY version').all(accountId) as Row[]).map(toEligibility),
   }
 }

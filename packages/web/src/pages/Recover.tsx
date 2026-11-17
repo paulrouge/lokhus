@@ -8,6 +8,7 @@ import {
   recoverWithWallets,
   registerRecoveryPasskey,
   takeLastPasskey,
+  useAuth,
   walletRecoveryChallenge,
   type PasskeyUse,
 } from '../lib/auth.ts'
@@ -16,6 +17,7 @@ import { recoveryParts } from '../crypto/keys.ts'
 import { DataProvider } from '../state/data.tsx'
 import { WalletProvider, useWallet } from '../state/wallet.tsx'
 import { WalletModal } from '../components/WalletModal.tsx'
+import { RegionBlockedNotice } from '../components/Eligibility.tsx'
 import { Button, ErrorNote } from '../components/ui.tsx'
 import { errorMessage, shortAddress } from '../lib/format.ts'
 
@@ -198,6 +200,7 @@ const WalletRecovery = () => {
 }
 
 export const Recover = () => {
+  const status = useAuth()
   const storage = useMemo(memoryStorage, [])
   const [method, setMethod] = useState<'code' | 'wallets'>('code')
   return (
@@ -211,22 +214,28 @@ export const Recover = () => {
             </Link>
           </header>
           <main className="signin">
-            <h1 className="signin-title">Recover your account</h1>
-            <div className="segmented" role="tablist" aria-label="Recovery method">
-              <button type="button" role="tab" aria-selected={method === 'code'} className={method === 'code' ? 'active' : ''} onClick={() => setMethod('code')}>
-                Recovery code
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={method === 'wallets'}
-                className={method === 'wallets' ? 'active' : ''}
-                onClick={() => setMethod('wallets')}
-              >
-                Recovery wallets
-              </button>
-            </div>
-            {method === 'code' ? <CodeRecovery /> : <WalletRecovery />}
+            <h1 className="signin-title">{status?.regionBlocked ? 'Not available here' : 'Recover your account'}</h1>
+            {status?.regionBlocked ? (
+              <RegionBlockedNotice />
+            ) : (
+              <>
+                <div className="segmented" role="tablist" aria-label="Recovery method">
+                  <button type="button" role="tab" aria-selected={method === 'code'} className={method === 'code' ? 'active' : ''} onClick={() => setMethod('code')}>
+                    Recovery code
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={method === 'wallets'}
+                    className={method === 'wallets' ? 'active' : ''}
+                    onClick={() => setMethod('wallets')}
+                  >
+                    Recovery wallets
+                  </button>
+                </div>
+                {method === 'code' ? <CodeRecovery /> : <WalletRecovery />}
+              </>
+            )}
             <p className="signin-note">
               Remembered your passkey? <Link to="/signin" className="link">Sign in</Link>
             </p>

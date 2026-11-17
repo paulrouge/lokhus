@@ -16,10 +16,8 @@ const request = async (url: string, init: RequestInit | undefined, onSignedOut: 
     ...init,
     headers: { 'X-MSA': '1', ...(init?.body ? { 'Content-Type': 'application/json' } : {}), ...init?.headers },
   })
-  if (response.status === 401) {
-    onSignedOut()
-    throw new Error('Signed out')
-  }
+  if (response.status === 401 || response.status === 403 || response.status === 451) onSignedOut()
+  if (response.status === 401) throw new Error('Signed out')
   if (response.status === 404 && (!init?.method || init.method === 'GET')) return null
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { error?: string } | null

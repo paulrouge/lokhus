@@ -33,7 +33,7 @@ Set `DATABASE_URL` to a Postgres 13+ connection string and start the server: it 
 
 - TLS: `?sslmode=require` verifies the server certificate against the system CAs (`pg` treats it like `verify-full`). For a provider with its own CA, add `&sslrootcert=/path/to/ca.pem`. `uselibpqcompat=true&sslmode=require` encrypts without verifying; avoid it outside a private network.
 - Rate limits are stored in Postgres too, so several server processes share them.
-- Moving an existing SQLite database: `DATABASE_URL=... node --env-file-if-exists=.env scripts/sqlite-to-postgres.ts [--from data/app.db] [--dry-run]`. It copies accounts, passkeys, sessions, encryption and recovery data, signed acknowledgments and all documents in one transaction, refuses to write into a database that already has accounts or documents, and `--dry-run` checks everything without writing.
+- Moving an existing SQLite database: `DATABASE_URL=... node --env-file-if-exists=.env scripts/sqlite-to-postgres.ts [--from data/app.db] [--dry-run]`. It copies accounts, passkeys, sessions, encryption and recovery data, signed acknowledgments, eligibility confirmations and all documents in one transaction, refuses to write into a database that already has accounts or documents, and `--dry-run` checks everything without writing.
 - Tests: with `TEST_DATABASE_URL` set (in the environment or `.env`), the server test suites also run against Postgres. Each run creates its own `lokhus_test_*` schema and drops it afterwards, so your dev database is fine. Without `TEST_DATABASE_URL` the tests use `DATABASE_URL`, except in hosted mode. Never run them against production.
 
 ## Signing in
@@ -60,9 +60,21 @@ Lokhus runs in one of two modes, set with `LOKHUS_MODE`:
 | `LOKHUS_TRUST_PROXY` | off | Set to `1` behind a reverse proxy, so `X-Forwarded-For` / `X-Forwarded-Proto` are used for the client IP, `Secure` cookies and HSTS. Never set it when the server is reachable directly. |
 | `LOKHUS_PROXY_HOPS` | `1` | How many trusted proxies append to `X-Forwarded-For`. The client IP is taken that many entries from the right. Raise it only if every hop is a proxy you control and that appends. |
 | `LOKHUS_DEV_LOCALHOST` | off | Allow `http://localhost` in hosted mode, for local testing only. |
+| `LOKHUS_BLOCKED_COUNTRIES` | hosted: `US,CU,IR,KP,SY`, self: none | Two-letter country codes whose visitors are refused, or `none`. Needs the country database. |
+| `LOKHUS_GEOIP_FILE` | `geoip/dbip-country-lite.csv.gz` | DB-IP country lite CSV (gzipped or plain). `make geoip` downloads it; the Docker image fetches it at build. |
+| `LOKHUS_GEOIP_MONTH` | current month | Build-time only: which DB-IP release `make geoip` and the Docker build download, for example `2026-11`. |
 | `PORT_API` | `8787` | Port. |
 | `DATABASE_URL` | | Postgres connection string. Empty means SQLite. |
 | `MSA_DB` | `data/app.db` | SQLite file, used when `DATABASE_URL` is empty. |
+
+### Restricted countries
+
+Hosted Lokhus is not offered to US persons or in the United States, Cuba, Iran, North Korea or Syria. Two layers enforce that:
+
+- **IP block.** The server looks up the client IP (from `X-Forwarded-For` with `LOKHUS_TRUST_PROXY=1`, so the hop count must be right) in the DB-IP country database. Blocked visitors can still read the public pages, but every `/api` route except `status` and `logout` answers 451 and the app shows "Not available here". Private and unknown addresses are allowed. The server refuses to start when countries are blocked and the database is missing, truncated or has no addresses for a listed country, and warns when it is older than 45 days.
+- **Self-attestation.** Sign-up needs a checkbox stating the holder is not a US person, not in those countries and not on a sanctions list (`ELIGIBILITY` in `packages/core/src/acknowledgment.ts`). Existing accounts are asked once. The confirmation (version, statement, time) is stored readable in `eligibility_confirmations`, exported and deleted with the account, and the document API answers 403 until it exists. Changing the text means bumping its version, which asks everyone again.
+
+The Docker build downloads the current month's file (`scripts/fetch-geoip.ts`) in its own stage, which reruns whenever source changes; redeploy at least monthly, or build with `--no-cache`, to keep it fresh. Outside Docker run `make geoip` and repeat it monthly. Country data is [IP Geolocation by DB-IP](https://db-ip.com), CC BY 4.0. For a local hosted-mode test without the file, set `LOKHUS_BLOCKED_COUNTRIES=none`.
 
 Hosted deployment on one box: Caddy terminates TLS and proxies to Lokhus on `127.0.0.1:8787` (`deploy/Caddyfile`), and systemd runs the server (`deploy/lokhus.service`). Put the settings, including `DATABASE_URL`, in `/etc/lokhus/lokhus.env` (owned by root, mode `0640`, group `lokhus`); the unit loads it with `EnvironmentFile=`. Back up the database (`pg_dump` or your provider's backups). The schema is described in `docs/postgres.md`.
 

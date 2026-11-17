@@ -23,7 +23,7 @@ import { CHALLENGE_TTL_MS } from './auth.ts'
 import { MAX_RECOVERY_WALLETS, hashRecoveryAuth, type KeyKind, type LockedKey, type VaultStore } from './vault.ts'
 import { recoverPersonalSigner } from './walletSignature.ts'
 import { verifyAcknowledgment, type AcknowledgmentStore } from './acknowledgments.ts'
-import { ACKNOWLEDGMENTS, isAcknowledgmentKind } from '@msa/core/acknowledgment'
+import { ACKNOWLEDGMENTS, ELIGIBILITY, isAcknowledgmentKind } from '@msa/core/acknowledgment'
 
 export interface WebAuthn {
   generateRegistrationOptions: typeof generateRegistrationOptions
@@ -47,6 +47,7 @@ export interface AuthContext {
   config: ServerConfig
   limiter: RateLimiter
   now: () => number
+  regionBlocked: boolean
   storeFor(account: string): DocStore
 }
 
@@ -157,6 +158,14 @@ const requireSetupCode = async (context: AuthContext, code: unknown) => {
   if (result !== 'ok') throw new HttpError(403, 'Open the link printed in the Lokhus server log to create your passkey.')
 }
 
+const requireEligibility = (context: AuthContext, version: unknown) => {
+  if (context.auth.mode === 'hosted' && version !== ELIGIBILITY.version)
+    throw new HttpError(400, 'Confirm that you are not a US person and not in a restricted country.', null, 'eligibility')
+}
+
+export const isEligible = async (context: Pick<AuthContext, 'auth' | 'acknowledgments'>, accountId: string) =>
+  context.auth.mode !== 'hosted' || (await context.acknowledgments.eligibility(accountId, ELIGIBILITY.version)) !== null
+
 const publicRoutes = new Set([
   'status',
   'register/options',
@@ -196,6 +205,8 @@ export const handleAuth = async (req: IncomingMessage, res: ServerResponse, path
       needsSetupCode: auth.needsSetupCode(),
       signedIn: !!account,
       account: account ? { id: account.id, name: account.name } : null,
+      regionBlocked: context.regionBlocked,
+      needsEligibility: !!account && !(await isEligible(context, account.id)),
     })
   }
 
@@ -204,6 +215,7 @@ export const handleAuth = async (req: IncomingMessage, res: ServerResponse, path
     if (!(await auth.registrationOpen())) throw new HttpError(403, 'Registration is closed. Sign in with a passkey instead.')
     if (auth.mode === 'hosted') await rateLimit(limiter, `register:${ip}`, config.limits.registerPerHour, 60 * 60_000)
     const body = await readObject(req)
+    requireEligibility(context, body.eligibility)
     await requireSetupCode(context, body.setupCode)
     const waiting = await auth.accountAwaitingPasskey()
     const accountName = waiting?.name ?? name(body.accountName, 'Account name')
@@ -222,6 +234,7 @@ export const handleAuth = async (req: IncomingMessage, res: ServerResponse, path
     const rp = relyingParty(req, config)
     if (!(await auth.registrationOpen())) throw new HttpError(403, 'Registration is closed. Sign in with a passkey instead.')
     const body = await readObject(req)
+    requireEligibility(context, body.eligibility)
     await requireSetupCode(context, body.setupCode)
     const { state, expectedChallenge } = consumer(context, 'register', rp.rpId)
     const verification = await webauthn
@@ -250,6 +263,7 @@ export const handleAuth = async (req: IncomingMessage, res: ServerResponse, path
       if (error instanceof RegistrationClosed) throw new HttpError(403, 'Registration is closed. Sign in with a passkey instead.')
       throw error
     }
+    if (auth.mode === 'hosted') await context.acknowledgments.confirmEligibility(account.id, ELIGIBILITY.version, ELIGIBILITY.statement)
     return send(res, 200, { account: { id: account.id, name: account.name }, passkeyId: credential.id }, await startSession(req, context, account.id))
   }
 
@@ -614,6 +628,13 @@ export const handleAuth = async (req: IncomingMessage, res: ServerResponse, path
     return send(res, 200, await context.acknowledgments.add(accountId, acknowledgment))
   }
 
+  if (route === 'POST eligibility') {
+    if (auth.mode !== 'hosted') throw new HttpError(404, 'Only used on hosted Lokhus')
+    requireEligibility(context, (await readObject(req)).version)
+    await context.acknowledgments.confirmEligibility(accountId, ELIGIBILITY.version, ELIGIBILITY.statement)
+    return send(res, 200, { confirmed: true })
+  }
+
   if (route === 'GET export') {
     requireStepUp(active, now())
     const account = (await auth.account(accountId))!
@@ -623,6 +644,7 @@ export const handleAuth = async (req: IncomingMessage, res: ServerResponse, path
       account: { id: account.id, name: account.name },
       vault: await vault.exportKeys(accountId),
       acknowledgments: await context.acknowledgments.list(accountId),
+      eligibility: await context.acknowledgments.listEligibility(accountId),
       docs: await context.storeFor(accountId).exportAll(),
     })
   }
